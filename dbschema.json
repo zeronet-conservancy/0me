@@ -17,6 +17,7 @@
 		".+/data/users/.+/data.json": {
 			"to_table": [
 				"post",
+				"repost",
 				"comment",
 				"follow",
 				{"node": "post_like", "table": "post_like", "key_col": "post_uri", "val_col": "date_added"}
@@ -39,18 +40,31 @@
 				["avatar", "TEXT"]
 			],
 			"indexes": ["CREATE UNIQUE INDEX path ON json(directory, site, file_name)"],
-			"schema_changed": 4
+			"schema_changed": 5
 		},
 		"post": {
 			"cols": [
 				["post_id", "INTEGER"],
 				["body", "TEXT"],
+				["repost_uri", "TEXT"],
 				["meta", "TEXT"],
 				["date_added", "INTEGER"],
 				["json_id", "INTEGER REFERENCES json (json_id)"]
 			],
 			"indexes": ["CREATE UNIQUE INDEX post_key ON post(json_id, post_id)", "CREATE INDEX post_id ON post(post_id)", "CREATE INDEX added ON post(date_added)"],
-			"schema_changed": 4
+			"schema_changed": 5
+		},
+		"repost": {
+			"cols": [
+				["post_id", "INTEGER"],
+				["body", "TEXT"],
+				["repost_uri", "TEXT"],
+				["meta", "TEXT"],
+				["date_added", "INTEGER"],
+				["json_id", "INTEGER REFERENCES json (json_id)"]
+			],
+			"indexes": ["CREATE UNIQUE INDEX repost_key ON repost(json_id, post_id)", "CREATE INDEX repost_id ON repost(post_id)", "CREATE INDEX repost_added ON repost(date_added)"],
+			"schema_changed": 5
 		},
 		"post_like": {
 			"cols": [

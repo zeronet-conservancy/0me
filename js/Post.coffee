@@ -1,6 +1,9 @@
 class Post extends Class
 	constructor: (row, @item_list) ->
 		@liked = false
+		@reposted = false
+		@is_repost = false
+		@reposted_by = ""
 		@commenting = false
 		@submitting_like = false
 		@owned = false
@@ -16,8 +19,13 @@ class Post extends Class
 		@row = row
 		if @row.meta
 			@meta = new PostMeta(@, JSON.parse(@row.meta))
+		@is_repost = row["is_repost"]
 		if Page.user
-			@liked = Page.user.likes[@row.key]
+			@liked = Page.user.likes[@row.post_uri]
+			if (Page.user.reposts)
+				@reposted = Page.user.reposts[@row.post_uri]
+		if @is_repost
+			@reposted_by = new User({hub: row.reposted_by_hub, auth_address: row.reposted_by_directory.replace("data/users/", "")})
 		@user = new User({hub: row.site, auth_address: row.directory.replace("data/users/", "")})
 		@user.row = row
 		@owned = @user.auth_address == Page.user?.auth_address
@@ -60,6 +68,28 @@ class Post extends Class
 			Animation.flashIn(e.currentTarget.firstChild)
 			Page.user.like site, post_uri, =>
 				@submitting_like = false
+				@follow()
+		return false
+
+	handleRepostClick: (e) =>
+		@submitting_repost = true
+		if @row.is_repost
+			site = @row.site
+			post_uri = @row.post_uri
+		else
+			[site, post_uri] = @row.key.split("-")
+
+		# reposted = Page.user?.reposts[post_uri] | Page.user?.reposts[@row.post_uri]
+
+		if Page.user.reposts[post_uri]
+			Animation.flashOut(e.currentTarget.firstChild)
+			Page.user.derepost post_uri, =>
+				@submitting_repost = false
+				@unfollow()
+		else
+			Animation.flashIn(e.currentTarget.firstChild)
+			Page.user.repost post_uri, =>
+				@submitting_repost = false
 				@follow()
 		return false
 
@@ -217,8 +247,10 @@ class Post extends Class
 
 	render: =>
 		[site, post_uri] = @row.key.split("-")
+		if Page.user and Page.user.reposts
+			reposted = Page.user?.reposts[post_uri] | Page.user?.reposts[@row.post_uri]
 		h("div.post", {key: @row.key, enterAnimation: Animation.slideDown, exitAnimation: Animation.slideUp, animate_scrollfix: true, classes: {selected: @row.selected}, style: @css_style}, [
-			h("div.user", [
+			h("div.user", {style: if @is_repost then "height: unset;" else ""}, [ # TODO: use CSS classes
 				@user.renderAvatar({href: @user.getLink(), onclick: Page.handleLinkClick}),
 				h("a.name.link", {href: @user.getLink(), onclick: Page.handleLinkClick, style: "color: #{Text.toColor(@user.auth_address)}"},
 					@row.user_name
@@ -229,6 +261,12 @@ class Post extends Class
 				h("a.added.link", {href: @getLink(), title: Time.date(@row.date_added, "long"), onclick: Page.handleLinkClick}, Time.since(@row.date_added)),
 				if @menu then @menu.render(".menu-right"),
 				h("a.settings", {href: "#Settings", onclick: Page.returnFalse, onmousedown: @handleSettingsClick}, "\u22EE")
+				if @is_repost then h("div", {style: "opacity: 75%; font-sie: 14px;" }, [
+					h("div.icon.icon-share", {style: "margin-left: -10px; margin-top: -4px;"}),
+					"Reposted by ",
+					@reposted_by.renderAvatar({href: @reposted_by.getLink(), onclick: Page.handleLinkClick, small: true})],
+					"#{@row.reposted_by_address}"
+				),
 			])
 			if @owned
 				@editable_body.render(@row.body)
@@ -242,7 +280,10 @@ class Post extends Class
 					h("div.icon.icon-heart", {classes: {active: Page.user?.likes[post_uri]}}),
 					if @row.likes then @row.likes
 				)
-				# h("a.icon.icon-share.link", {href: "#Share"}, "Share"),
+				h("a.repost.link", {classes: {active: reposted, loading: @submitting_repost, "repost-zero": @row.reposts == 0}, href: "#Repost", onclick: @handleRepostClick},
+					h("div.icon.icon-share", {classes: {active: reposted}}),
+					if @row.reposts then @row.reposts
+				)
 			]),
 			@renderComments()
 		])
