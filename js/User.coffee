@@ -3,6 +3,7 @@ class User extends Class
 		if row
 			@setRow(row)
 		@likes = {}
+		@reposts = {}
 		@followed_users = {}
 		@submitting_follow = false
 
@@ -27,6 +28,7 @@ class User extends Class
 	updateInfo: (cb=null) =>
 		@logStart "Info loaded"
 		p_likes = new Promise()
+		p_reposts = new Promise()
 		p_followed_users = new Promise()
 
 		# Load followed users
@@ -43,7 +45,14 @@ class User extends Class
 				@likes[row.post_uri] = true
 			p_likes.resolve()
 
-		Promise.join(p_followed_users, p_likes).then (res1, res2) =>
+		# Load reposts
+		Page.cmd "dbQuery", ["SELECT repost.* FROM json LEFT JOIN repost USING (json_id) WHERE directory = 'data/users/#{@auth_address}' AND repost_uri IS NOT NULL"], (res) =>
+			@reposts = {}
+			for row in res
+				@reposts[row.repost_uri] = true
+			p_reposts.resolve()
+
+		Promise.join(p_followed_users, p_likes, p_reposts).then (res1, res2, res3) =>
 			@logEnd "Info loaded"
 			cb?(true)
 
@@ -87,6 +96,7 @@ class User extends Class
 				"date_added": Time.timestamp(),
 				"body": "Hello ZeroMe!"
 			}],
+			"repost": [],
 			"post_like": {},
 			"comment": [],
 			"follow": []
@@ -102,6 +112,7 @@ class User extends Class
 				"post_like": {},
 				"comment": []
 			}
+			data.repost ?= []
 			cb(data)
 
 	renderAvatar: (attrs={}) =>
@@ -109,6 +120,8 @@ class User extends Class
 			attrs.style = "background-image: url('#{@getAvatarLink()}')"
 		else
 			attrs.style = "background: linear-gradient("+Text.toColor(@auth_address)+","+Text.toColor(@auth_address.slice(-5))+")"
+		if attrs.small
+			attrs.style += "; width: 16px; height: 16px; position: relative; top: 2px; margin-left: 0; margin-right: 4px;" # TODO: use CSS classes
 		h("a.avatar", attrs)
 
 	save: (data, site=@hub, cb=null) ->
@@ -165,6 +178,31 @@ class User extends Class
 			delete data.post_like[post_uri]
 			@save data, site, (res) =>
 				if cb then cb(res)
+
+	repost: (post_uri, cb=null) ->
+		@log "Repost", post_uri
+		@reposts[post_uri] = true
+
+		@getData @hub, (data) =>
+			repost = {
+				"post_id": Time.timestamp() + data.next_post_id,
+				"repost_uri": post_uri,
+				"date_added": Time.timestamp()
+			}
+			data.repost.push repost
+			data.next_post_id += 1
+			@save data, @hub, (res) =>
+				if cb then cb(res)
+
+	derepost: (post_uri, cb=null) ->
+		@log "Derepost", post_uri
+		delete @reposts[post_uri]
+
+		Page.user.getData Page.user.hub, (data) =>
+			repost_index = i for repost, i in data.repost when repost.repost_uri == post_uri
+			data.repost.splice(repost_index, 1)
+			Page.user.save data, Page.user.hub, (res) =>
+				cb(res)
 
 	comment: (site, post_uri, body, cb=null) ->
 		@getData site, (data) =>
